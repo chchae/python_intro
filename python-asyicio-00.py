@@ -2,7 +2,7 @@ import asyncio
 import numpy as np
 
 
-NUM_PROC : int = 1024
+NUM_PROC : int = 10
 
 def get_sleeptime() -> int :
     return np.random.randint(2, 9)
