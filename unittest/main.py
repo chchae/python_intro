@@ -1,9 +1,8 @@
-from src.prime import is_prime, collect_primes 
-from src.fibo  import fibonacci
+from src import prime, fibo
 
-print( is_prime(52757) )
-print( is_prime(52756) )
-print( len( collect_primes(10240) ) )
+print( prime.is_prime(52757) )
+print( prime.is_prime(52756) )
+print( len( prime.collect_primes(10240) ) )
 
-print( fibonacci(34) )
+print( fibo.fibonacci(34) )
 

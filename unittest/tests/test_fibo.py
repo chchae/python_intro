@@ -1,5 +1,4 @@
-from src.fibo  import fibonacci
+from src import fibo 
 
 def test_fibonacci() -> None :
-    assert 9227465 == fibonacci(34)
-    
+    assert 9227465 == fibo.fibonacci(34)
