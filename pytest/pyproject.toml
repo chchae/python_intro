@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "python-intro"
+name = "pytest"
 version = "0.1.0"
 description = ""
 authors = ["chchae <ch1chae@gmail.com>"]
