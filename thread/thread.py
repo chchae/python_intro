@@ -68,13 +68,13 @@ class ProteinBuilder(ABC) :
     jobid : int = 0
 
     @abstractmethod
-    def build( self, seq: str, jobid: int = 0 ) -> int :
+    def build( self, seq: str ) -> int :
         raise NotImplementedError()
 
 
 @dataclass
 class DummyProteinBuilder(ProteinBuilder) :
-    def build( self, seq: str, jobid: int = 0 ) -> int :
+    def build( self, seq: str ) -> int :
         import subprocess
         nseed = random.randint( 35, 42)
         print( f"start  : {self.jobid = :2d}, {nseed = :2d}" )
@@ -84,12 +84,26 @@ class DummyProteinBuilder(ProteinBuilder) :
         return int(ret)
 
 class ModellerProteinBuilder(ProteinBuilder) :
-    def build( self, seq: str, jobid: int = 0 ) -> int :
+    def build( self, seq: str ) -> int :
+        res = self._build_1(seq)
+        res += self._build_2(seq)
+        return res
+    
+    def _build_1( self, seq: str ) -> int :
         import subprocess
-        cmd = f"echo '{seq}' | shasum -a 512256 | shasum -a 512256"
+        cmd = f"echo '{seq}' | shasum -a 512256 | shasum -a 512256 | shasum -a 512256"
         ret = subprocess.check_output( cmd, shell=True ).decode("utf-8").strip()
-        print( f"{jobid}: {seq[:20]} {ret[:56]}")
-        return jobid
+        print( f"{self.jobid}: {seq[:20]} {ret[:56]}")
+        return self.jobid
+
+    def _build_2( self, seq: str ) -> int :
+        import subprocess
+        nseed = random.randint( 39, 42)
+        print( f"start  : {self.jobid = :2d}, {nseed = :2d}" )
+        cmd = "/Users/chchae/bin/fibo " + str(nseed)
+        ret = subprocess.check_output( cmd, shell=True ).decode("utf-8")
+        print( f"finish : {self.jobid = :2d}, {nseed = :2d}, {ret = }" )
+        return int(ret)
 
 class RosettaFoldProteinBuilder(ProteinBuilder) :
     def build( self, seq: str, jobid: int = 0 ) -> int :
@@ -108,12 +122,11 @@ def main() -> None :
         # builder = DummyProteinBuilder(0)
         fname = "/Users/chchae/work/data/sequence-short.fasta"
         fetcher = FastaSequenceFetcher(fname)
-        builder = ModellerProteinBuilder()
         futures : list[Future[int]] = []
-        for id, seq in enumerate( fetcher.fetch() ) :
+        for id, seq in enumerate( fetcher.fetch(),1 ) :
             if is_model_exists( seq.code ) :
                 continue
-            futures.append( executor.submit( builder.build, seq.sequence, id ) )
+            futures.append( executor.submit( ModellerProteinBuilder(id).build, seq.sequence ) )
             if id > 1024 :
                 break 
         results = [ future.result() for future in as_completed(futures) ]
