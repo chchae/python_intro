@@ -1,5 +1,6 @@
 import random
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 from itertools import groupby
 from functools import partial
 from typing import Generator
@@ -12,13 +13,6 @@ def is_model_exists( code: str ) -> bool :
     return False
 
 
-def fetcher_dummy(_: int | str | None = None) -> Generator[str, None, None] :
-    _seqs : list[int] = [ random.randint( 35, 42 ) for _ in range(100) ]
-    for id in _seqs:
-        yield str(id)
-
-
-
 
 @dataclass
 class SequenceFasta:
@@ -29,9 +23,7 @@ class SequenceFasta:
     def is_valid(self) -> bool :
         return 0 < len(self.code) and 0 < len(self.sequence)
 
-def split_titleline( line: str ) -> tuple[str, str] :
-    (code, descr) = line[1:].split( '|', 1 )
-    return code.strip(), descr.strip()
+
 
 def fetcher_fasta( filename : str ) -> Generator[SequenceFasta, None, None] :
     with open( filename ) as ifp :
@@ -43,9 +35,6 @@ def fetcher_fasta( filename : str ) -> Generator[SequenceFasta, None, None] :
             yield SequenceFasta(name, descr, seq)
 
 
-
-
-
 def build_dummy( seq: str, jobid: int = 0 ) -> int :
     import subprocess
     nseed = int(seq)
@@ -55,7 +44,6 @@ def build_dummy( seq: str, jobid: int = 0 ) -> int :
     print( f"{jobid} : {nseed = }, {ret =}")
     return int(ret)
 
-
 def encode_rsa( msg : str ) -> bytes :
     import rsa
     publicKey, _ = rsa.newkeys(2048)
@@ -64,7 +52,7 @@ def encode_rsa( msg : str ) -> bytes :
 def build_fasta( seq: str, jobid: int = 0 ) -> int :
     import subprocess
 
-    print( f"{jobid} : {seq = }")
+    #print( f"{jobid} : {seq = }")
     # cmd = "python /Users/chchae/bin/rsa-encode.py " + seq
     cmd = f"echo '{seq}' | shasum -a 512256 | shasum -a 512256"
     ret = subprocess.check_output( cmd, shell=True ).decode("utf-8").strip()
@@ -75,7 +63,86 @@ def build_fasta( seq: str, jobid: int = 0 ) -> int :
 
 
 
-def main() -> None :
+
+class SequenceFetcher(ABC) :
+    @abstractmethod
+    def fetch(self) -> Generator[SequenceFasta, None, None] :
+        raise NotImplementedError()
+
+
+class DummySequenceFetcher(SequenceFetcher) :
+    def __init__(self, count : int = 100 ) :
+        self._seqs : list[int] = [ random.randint( 30, 42 ) for _ in range(count) ]
+
+    def fetch(self) -> Generator[SequenceFasta, None, None] :
+        for id in self._seqs:
+            yield SequenceFasta(str(id), str(id), str(id))
+
+
+@dataclass
+class FastaSequenceFetcher(SequenceFetcher) :
+    _filename : str = ""
+
+    def fetch(self) -> Generator[SequenceFasta, None, None] :
+        with open( self._filename ) as ifp :
+            lines = ( x[1] for x in groupby(ifp, lambda line: str(line).startswith(">") ) )
+            for header in lines:
+                headerStr = str(header.__next__())
+                (name, descr) = headerStr[1:].strip().split( '|', 1 )
+                seq = "".join(s.strip() for s in lines.__next__())
+                yield SequenceFasta(name, descr, seq)
+
+
+class OracleSequenceFetcher(SequenceFetcher) :
+    url : str = ""
+    userid : str = ""
+    passwd : str = ""
+    def fetch(self) -> Generator[SequenceFasta, None, None] :
+        raise NotImplementedError()
+
+
+
+@dataclass
+class ProteinBuilder(ABC) :
+    jobid : int = 0
+
+    @abstractmethod
+    def build( self, seq: str ) -> int :
+        raise NotImplementedError()
+
+
+@dataclass
+class DummyProteinBuilder(ProteinBuilder) :
+    def build( self, seq: str ) -> int :
+        import subprocess
+        nseed = int(seq)
+        print( f"start  : {self.jobid = :2d}, {nseed = :2d}" )
+        cmd = "/Users/chchae/bin/fibo " + str(nseed)
+        ret = subprocess.check_output( cmd, shell=True ).decode("utf-8")
+        print( f"finish : {self.jobid = :2d}, {nseed = :2d}, {ret = }" )
+        return int(ret)
+
+class ModellerProteinBuilder(ProteinBuilder) :
+    def build( self, seq: str, jobid: int = 0 ) -> int :
+        import subprocess
+
+        cmd = f"echo '{seq}' | shasum -a 512256 | shasum -a 512256"
+        ret = subprocess.check_output( cmd, shell=True ).decode("utf-8").strip()
+        print( f"{jobid} : {seq[:10]} {ret}")
+        return jobid
+
+class RosettaFoldProteinBuilder(ProteinBuilder) :
+    def build( self, seq: str ) -> int :
+        raise NotImplementedError()
+
+class AlphaFoldProteinBuilder(ProteinBuilder) :
+    def build( self, seq: str ) -> int :
+        raise NotImplementedError()
+
+
+
+
+def main_functions() -> None :
     MAX_WORKERS : int = cpu_count()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         fname = "/Users/chchae/work/data/sequence-short.fasta"
@@ -83,13 +150,31 @@ def main() -> None :
         build_func = partial( build_fasta )
         futures : list[Future[int]] = []
         for id, seq in enumerate( fetch_func() ) :
-            #print( id, seq.code, seq.descr )
             if is_model_exists( seq.code ) :
                 continue
             futures.append( executor.submit( build_func, seq.sequence, id ) ) 
         results = [ future.result() for future in as_completed(futures) ]
-        print(results)
+        # print(results)
     print( f"Done {len(results)}-sequences...")
+
+
+def main() -> None :
+    MAX_WORKERS : int = cpu_count()
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # fetcher = DummySequenceFetcher(300)
+        # builder = DummyProteinBuilder(0)
+        fname = "/Users/chchae/work/data/sequence-short.fasta"
+        fetcher = FastaSequenceFetcher(fname)
+        builder = ModellerProteinBuilder(0)
+        futures : list[Future[int]] = []
+        for _, seq in enumerate( fetcher.fetch() ) :
+            if is_model_exists( seq.code ) :
+                continue
+            futures.append( executor.submit( builder.build, seq.sequence ) ) 
+        results = [ future.result() for future in as_completed(futures) ]
+        # print(results)
+    print( f"Done {len(results)}-sequences...")
+
 
 if __name__ == "__main__" :
     main()
