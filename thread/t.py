@@ -1,94 +1,123 @@
+# run cpu-intensive external program concurrently using asyncio
+# for RosettaFold
+
 import random
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
 import multiprocessing
-from multiprocessing.synchronize import Lock as LockBase
-from concurrent.futures import ProcessPoolExecutor, Future
+import threading
+
+
+class SequenceFetcher(ABC) :
+    _lock = threading.Lock()
+
+    @abstractmethod
+    async def fetch(sel) -> str | None :
+        raise NotImplementedError()
+
+
+class DummySequenceFetcher(SequenceFetcher) :
+
+    def __init__(self) :
+        self._seqs : list[int] = [ random.randint( 30, 42 ) for _ in range(200) ]
+
+    async def fetch(self) -> str | None :
+        async with self._lock:
+            if len( self._seqs ) == 0 :
+                return None
+            return str( self._seqs.pop(0) )
+
+class FileSequenceFetcher(SequenceFetcher) :
+    async def fetch(self) -> str | None :
+        raise NotImplementedError()
+
+class OracleSequenceFetcher(SequenceFetcher) :
+    async def fetch(self) -> str | None :
+        raise NotImplementedError()
+
+
+@dataclass
+class ProteinBuilder(ABC) :
+    jobid : int
+    fetcher : SequenceFetcher
+    future : asyncio.Future[ list[int] ]
+
+    async def run(self) -> None :
+        result: list[int] = []
+        while True:
+            if ( nseed := await self.fetcher.fetch() ) is None :
+                break
+            res = await self.build( int(nseed) )
+            result.append( res )
+        self.future.set_result(result)
+
+    @abstractmethod
+    async def build( self, nseed: int ) -> int :
+        raise NotImplementedError()
+
+@dataclass
+class DummyProteinBuilder(ProteinBuilder) :
+    jobid : int
+    fetcher : SequenceFetcher
+    future : asyncio.Future[ list[int] ]
+
+    async def build( self, nseed: int ) -> int :
+        print( f"start  : work {self.jobid = :2d}, {nseed = :2d}" )
+        result = await self.run_builder( "/Users/chchae/bin/fibo" + " " + str(nseed) )
+        print( f"finish : work {self.jobid = :2d}, {nseed = :2d}, {result = }" )
+        return result
+
+    @staticmethod
+    async def run_builder(cmd: str) -> int:
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stderr=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if False :
+            print( f"{proc.returncode = } {stdout.decode() = } {stderr.decode() = }" )
+        result = int( stdout.decode() )
+        return result
 
 
 
-def fibo(n : int) -> int :
-    if n < 2 :
-        return 1
-    return fibo(n - 2) + fibo(n - 1)
+class RosettaFoldProteinBuilder(ProteinBuilder) :
+    jobid : int
+    fetcher : SequenceFetcher
+    future : asyncio.Future[ list[int] ]
 
+    async def build( self, nseed: int ) -> int :
+        raise NotImplementedError()
 
+class AlphaFoldProteinBuilder(ProteinBuilder) :
+    jobid : int
+    fetcher : SequenceFetcher
+    future : asyncio.Future[ list[int] ]
 
-class Counter(object):
-    def __init__(self):
-        # self.lock = threading.Lock()
-        self.count = 0
-
-    def increment(self):
-        # with self.lock:
-        self.count = self.count + 1
-        print( f"count={self.count}" )
-
-    def decrement(self):
-        # with self.lock:
-        self.count = self.count - 1
-        print( f"count={self.count}" )
-
-
-def increaser(counter: Counter):
-    for _ in range(10):
-        nseed = random.randint( 35, 40 )
-        print( f'increase:start {nseed}' )
-        fibo( nseed )
-        print( f'increase:end   {nseed}' )
-        #counter.increment()
-
-def decreaser(counter: Counter):
-    for _ in range(10):
-        nseed = random.randint( 35, 40 )
-        print( f'decrease:start {nseed}' )
-        fibo( nseed )
-        print( f'decrease:end   {nseed}' )
-        #counter.decrement()
-
-
-
-def worker(jobid : int, counter: Counter, lock: LockBase = None ):
-    for _ in range(5):
-        nseed = random.randint( 30, 40 )
-        print( f'worker_{jobid}:start {nseed=}' )
-        result = fibo( nseed )
-        print( f'worker_{jobid}:end   {nseed=} {result=}' )
-        if( lock ) :
-            with lock:
-                counter.increment()
-
-def worker_a(jobid : int, counter: Counter, lock: LockBase ):
-    for _ in range(5):
-        nseed = random.randint( 30, 40 )
-        fibo( nseed )
-
-
-def main1() -> None :
-    counter : Counter = Counter()
-    lock : LockBase = multiprocessing.Lock()
-    MAX_WORKERS : int = multiprocessing.cpu_count()
- 
-    processes = [ 
-        multiprocessing.Process( 
-            target=worker, args=(jobid, counter, lock) ) 
-            for jobid in range(MAX_WORKERS) 
-    ]
-    for p in processes:
-        p.start()
-    for p in processes:
-        p.join()
-
+    async def build( self, nseed: int ) -> int :
+        raise NotImplementedError()
 
 
 def main() -> None :
     MAX_WORKERS : int = multiprocessing.cpu_count()
 
-    with ProcessPoolExecutor() as execp:
-        counter : Counter = Counter()
-        # lock : LockBase = multiprocessing.Lock()
+    with ProcessPoolExecutor() as pex :
         lock = multiprocessing.Manager().Lock()
-        #futures : list[Future[Any]] = []
-        for jobid in range(MAX_WORKERS) :
-            execp.submit( worker, jobid, counter, lock )
+        fetcher = DummySequenceFetcher()
+
+
+    loop = asyncio.get_running_loop()
+    fetcher = DummySequenceFetcher()
+    futures : list[ asyncio.Future[ list[int] ] ] = []
+    for jobid in range(MAX_WORKERS) :
+        future = loop.create_future()
+        asyncio.create_task( DummyProteinBuilder( jobid, fetcher, future ).run() )
+        futures.append( future )
+            
+    results: list[ list[int] ] = [ await future for future in futures ]
+    reduced = sum( results, [] )
+    print( f"result[{len(reduced)} = {reduced}]" )
 
 
 if __name__ == "__main__" :

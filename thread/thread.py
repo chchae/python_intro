@@ -1,7 +1,6 @@
 import random
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
-import threading
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 import multiprocessing.synchronize
@@ -15,6 +14,7 @@ def fibo(n : int) -> int :
 
 
 class SequenceFetcher(ABC) :
+    _lock = multiprocessing.Manager().Lock()
     @abstractmethod
     def fetch(sel) -> int :
         raise NotImplementedError()
@@ -25,6 +25,7 @@ class DummySequenceFetcher(SequenceFetcher) :
         self._seqs : list[int] = [ random.randint(30, 40) for _ in range(10) ]
 
     def fetch(self) -> int :
+        #with SequenceFetcher._lock:
         if len( self._seqs ) == 0 :
             return -1
         return self._seqs.pop(0)
@@ -44,16 +45,15 @@ class ProteinBuilder :
     jobid : int
     fetcher : SequenceFetcher
     #lock : LockBase
-    lock : threading.Lock
+    # lock : threading.Lock
 
     def __call__(self) :
         self.run()
 
     def run(self) -> None :
         while True:
-            with self.lock :
-                if (nseed := self.fetcher.fetch()) == -1 :
-                    break
+            if (nseed := self.fetcher.fetch()) == -1 :
+                break
             self.build(nseed)
 
     def build( self, nseed: int ) -> None :
@@ -86,10 +86,10 @@ def main() -> None :
     print( f"{MAX_WORKERS = }" )
 
     with ProcessPoolExecutor() as pex :
-        lock = multiprocessing.Manager().Lock()
+        #lock = multiprocessing.Manager().Lock()
         fetcher = DummySequenceFetcher()
         for jobid in range(MAX_WORKERS) :
-            pex.submit( ProteinBuilder(jobid, fetcher, lock) )
+            pex.submit( ProteinBuilder(jobid, fetcher) )
 
     print( f"Done" )
 
