@@ -1,99 +1,126 @@
 import random
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
-from concurrent.futures import ProcessPoolExecutor
-import multiprocessing
-import multiprocessing.synchronize
-from multiprocessing.synchronize import Lock as LockBase
+from itertools import groupby
+from typing import Generator
+from multiprocessing import cpu_count
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 
 
-def fibo(n : int) -> int :
-    if n < 2 :
-        return 1
-    return fibo(n - 2) + fibo(n - 1)
+
+def is_model_exists( code: str ) -> bool :
+    return False
+
+
+@dataclass
+class SequenceFasta:
+    code : str = ""
+    descr : str = ""
+    sequence : str = ""
+
+    def is_valid(self) -> bool :
+        return 0 < len(self.code) and 0 < len(self.sequence)
 
 
 class SequenceFetcher(ABC) :
-    _lock = multiprocessing.Manager().Lock()
     @abstractmethod
-    def fetch(sel) -> int :
+    def fetch(self) -> Generator[SequenceFasta, None, None] :
         raise NotImplementedError()
 
 
 class DummySequenceFetcher(SequenceFetcher) :
-    def __init__(self) :
-        self._seqs : list[int] = [ random.randint(30, 40) for _ in range(10) ]
+    def __init__(self, length:int = 128, count : int = 100 ) :
+        self._seqs : list[str] = [
+            ''.join( random.choices( "ACDEFGHIKLMPQRSTVWY", k=length ) ) 
+            for _ in range(count)
+        ]
 
-    def fetch(self) -> int :
-        #with SequenceFetcher._lock:
-        if len( self._seqs ) == 0 :
-            return -1
-        return self._seqs.pop(0)
+    def fetch(self) -> Generator[SequenceFasta, None, None] :
+        for id in self._seqs:
+            yield SequenceFasta(str(id), str(id), str(id))
 
-class FileSequenceFetcher(SequenceFetcher) :
-    def fetch(self) -> int :
-        raise NotImplementedError()
+
+@dataclass
+class FastaSequenceFetcher(SequenceFetcher) :
+    _filename : str = ""
+
+    def fetch(self) -> Generator[SequenceFasta, None, None] :
+        with open( self._filename ) as ifp :
+            lines = ( x[1] for x in groupby(ifp, lambda line: str(line).startswith(">") ) )
+            for header in lines:
+                headerStr = str(header.__next__())
+                (name, descr) = headerStr[1:].strip().split( '|', 1 )
+                seq = "".join(s.strip() for s in lines.__next__())
+                yield SequenceFasta(name, descr, seq)
+
 
 class OracleSequenceFetcher(SequenceFetcher) :
-    def fetch(self) -> int :
+    url : str = ""
+    userid : str = ""
+    passwd : str = ""
+    def fetch(self) -> Generator[SequenceFasta, None, None] :
         raise NotImplementedError()
 
 
 
 @dataclass
-class ProteinBuilder :
-    jobid : int
-    fetcher : SequenceFetcher
-    #lock : LockBase
-    # lock : threading.Lock
+class ProteinBuilder(ABC) :
+    jobid : int = 0
 
-    def __call__(self) :
-        self.run()
-
-    def run(self) -> None :
-        while True:
-            if (nseed := self.fetcher.fetch()) == -1 :
-                break
-            self.build(nseed)
-
-    def build( self, nseed: int ) -> None :
-        print( f"start  : work {self.jobid = :2d}, {nseed = :3d}" )
-        result = fibo(nseed)
-        print( f"finish : work {self.jobid = :2d}, {nseed = :3d}, {result = }" )
+    @abstractmethod
+    def build( self, seq: str, jobid: int = 0 ) -> int :
+        raise NotImplementedError()
 
 
-def main_0() -> None :
-    MAX_WORKERS : int = multiprocessing.cpu_count()
-    print( f"{MAX_WORKERS = }" )
+@dataclass
+class DummyProteinBuilder(ProteinBuilder) :
+    def build( self, seq: str, jobid: int = 0 ) -> int :
+        import subprocess
+        nseed = random.randint( 35, 42)
+        print( f"start  : {self.jobid = :2d}, {nseed = :2d}" )
+        cmd = "/Users/chchae/bin/fibo " + str(nseed)
+        ret = subprocess.check_output( cmd, shell=True ).decode("utf-8")
+        print( f"finish : {self.jobid = :2d}, {nseed = :2d}, {ret = }" )
+        return int(ret)
 
-    lock : LockBase = multiprocessing.Lock()
-    # lock : multiprocessing.synchronize.Lock = multiprocessing.Lock()
-    fetcher = DummySequenceFetcher()
-    processes = [ 
-        multiprocessing.Process( target=ProteinBuilder(jobid, fetcher, lock) ) 
-            for jobid in range(MAX_WORKERS) 
-    ]
-    for p in processes:
-        p.start()
-    for p in processes:
-        p.join()
+class ModellerProteinBuilder(ProteinBuilder) :
+    def build( self, seq: str, jobid: int = 0 ) -> int :
+        import subprocess
+        cmd = f"echo '{seq}' | shasum -a 512256 | shasum -a 512256"
+        ret = subprocess.check_output( cmd, shell=True ).decode("utf-8").strip()
+        print( f"{jobid}: {seq[:20]} {ret[:56]}")
+        return jobid
 
-    print( f"Done" )
+class RosettaFoldProteinBuilder(ProteinBuilder) :
+    def build( self, seq: str, jobid: int = 0 ) -> int :
+        raise NotImplementedError()
+
+class AlphaFoldProteinBuilder(ProteinBuilder) :
+    def build( self, seq: str, jobid: int = 0 ) -> int :
+        raise NotImplementedError()
+
 
 
 def main() -> None :
-    MAX_WORKERS : int = multiprocessing.cpu_count()
-    print( f"{MAX_WORKERS = }" )
+    MAX_WORKERS : int = cpu_count()
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # fetcher = DummySequenceFetcher(128, 300)
+        # builder = DummyProteinBuilder(0)
+        fname = "/Users/chchae/work/data/sequence-short.fasta"
+        fetcher = FastaSequenceFetcher(fname)
+        builder = ModellerProteinBuilder()
+        futures : list[Future[int]] = []
+        for id, seq in enumerate( fetcher.fetch() ) :
+            if is_model_exists( seq.code ) :
+                continue
+            futures.append( executor.submit( builder.build, seq.sequence, id ) )
+            if id > 1024 :
+                break 
+        results = [ future.result() for future in as_completed(futures) ]
+        # print(results)
+    print( f"Done {len(results)}-sequences...")
 
-    with ProcessPoolExecutor() as pex :
-        #lock = multiprocessing.Manager().Lock()
-        fetcher = DummySequenceFetcher()
-        for jobid in range(MAX_WORKERS) :
-            pex.submit( ProteinBuilder(jobid, fetcher) )
 
-    print( f"Done" )
-
-
-if __name__ == '__main__' :
+if __name__ == "__main__" :
+    # main_functions()
     main()
-
