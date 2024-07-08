@@ -50,7 +50,7 @@ def fasta_sequence_fetch_closure( filename : str ) -> SequenceFetcherFuncType :
             for header in lines:
                 headerStr = str(header.__next__())
                 (name, descr) = headerStr[1:].strip().split( '|', 1 )
-                seq = "".join(s.strip() for s in lines.__next__())
+                seq = "".join( s.strip() for s in lines.__next__() )
                 yield (name, descr, seq)
 
     return fetch_func
