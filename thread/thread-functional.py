@@ -1,21 +1,25 @@
-import os
+# closure version :
+#
+
+import sys
 import random
-from dataclasses import dataclass
 from itertools import groupby
 from typing import Generator, Callable
-from multiprocessing import cpu_count
-from concurrent.futures import ThreadPoolExecutor, as_completed, Future
+import multiprocessing
+import concurrent.futures
 
-if os.name == "posix":
-    FASTA_DATA = "/home/chchae/work/data/sequence-short.fasta"
-    FIBO_EXE =  "/home/chchae/bin/fibo "
-else:
+if sys.platform == "darwin":
     FASTA_DATA = "/Users/chchae/work/data/sequence-short.fasta"
     FIBO_EXE = "/Users/chchae/bin/fibo "
+else:
+    FASTA_DATA = "/home/chchae/work/data/sequence-short.fasta"
+    FIBO_EXE =  "/home/chchae/bin/fibo "
 
 
 SequenceFasta = tuple[ str, str, str ]
-SequenceFetcherFunc = Callable[ [], SequenceFasta ]
+SequenceGenerator = Generator[SequenceFasta, None, None]
+SequenceFetcherFuncType = Callable[ [], SequenceGenerator ]
+BuilderFuncType = Callable[ [SequenceFasta], int ]
 
 
 def is_model_exists( code: str ) -> bool :
@@ -23,24 +27,24 @@ def is_model_exists( code: str ) -> bool :
 
 
 def is_valid_sequence_fasta( data: SequenceFasta ) -> bool :
-    return 0 < len(data.code) and 0 < len(data.sequence)
+    code, _, sequence = data
+    return 0 < len(code) and 0 < len(sequence)
 
 
-def dummy_sequence_fetch_closure( length: int = 128, count: int = 100 ) -> SequenceFetcherFunc :
+def dummy_sequence_fetch_closure( length: int = 128, count: int = 100 ) -> SequenceFetcherFuncType :
     _seqs : list[str] = [
-        ''.join( random.choices( "ACDEFGHIKLMPQRSTVWY", k=length ) ) 
-        for _ in range(count)
+        ''.join( random.choices( "ACDEFGHIKLMPQRSTVWY", k=length ) ) for _ in range(count)
     ]
 
-    def fetch_func(self) -> Generator[SequenceFasta, None, None] :
+    def fetch_func() -> SequenceGenerator :
         for id in _seqs:
-            yield SequenceFasta(str(id), str(id), str(id))
+            yield (id, id, id)
 
     return fetch_func
 
 
-def fasta_sequence_fetch_closure( filename : str ) :
-    def fetch_func() -> Generator[SequenceFasta, None, None] :
+def fasta_sequence_fetch_closure( filename : str ) -> SequenceFetcherFuncType :
+    def fetch_func() -> SequenceGenerator :
         with open( filename ) as ifp :
             lines = ( x[1] for x in groupby(ifp, lambda line: str(line).startswith(">") ) )
             for header in lines:
@@ -52,8 +56,8 @@ def fasta_sequence_fetch_closure( filename : str ) :
     return fetch_func
 
 
-def oracle_sequence_fetcher_closure( url : str, userid : str, passwd : str ) :
-    def fetch_func(self) -> Generator[SequenceFasta, None, None] :
+def oracle_sequence_fetcher_closure( url : str, userid : str, passwd : str ) -> SequenceFetcherFuncType :
+    def fetch_func() -> SequenceGenerator :
         raise NotImplementedError()
     
     return fetch_func
@@ -72,7 +76,7 @@ def dummy_protein_builder_closure( jobid : int ) :
     return build_func
 
 
-def modeller_protein_builder_closure( jobid : int ) :
+def modeller_protein_builder_closure( jobid : int = 0 ) -> BuilderFuncType :
     def build_func( data : SequenceFasta ) -> int :
         _, _, seq = data
         res = _build_1(seq)
@@ -98,37 +102,33 @@ def modeller_protein_builder_closure( jobid : int ) :
     return build_func
 
 
-def rosettafold_protein_builder_closure( jobid : int ) :
+def rosettafold_protein_builder_closure( jobid : int = 0 ) -> BuilderFuncType :
     def build_func( data : SequenceFasta ) -> int :
         raise NotImplementedError()
 
     return build_func
 
 
-def alphafold_protein_builder_closure( jobid : int ) :
+def alphafold_protein_builder_closure( jobid : int = 0 ) -> BuilderFuncType :
     def build_func( data : SequenceFasta ) -> int :
         raise NotImplementedError()
 
     return build_func
 
+
+def get_sequences() -> SequenceGenerator :
+    fetcher = fasta_sequence_fetch_closure(FASTA_DATA)
+    sequences : SequenceGenerator = ( s for s in fetcher() )
+    return sequences
 
 
 def main() -> None :
-    MAX_WORKERS : int = cpu_count()
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        fname = FASTA_DATA
-        fetcher = fasta_sequence_fetch_closure(fname)
-        futures : list[Future[int]] = []
-        for id, seq in enumerate( fetcher(), 1 ) :
-            if is_model_exists( seq[0] ) :
-                continue
-            builder = modeller_protein_builder_closure(id)
-            futures.append( executor.submit( builder, seq ) )
-            if id > 100 :
-                break 
-        results = [ future.result() for future in as_completed(futures) ]
-        # print(results)
-    print( f"Done {len(results)}-sequences...")
+    MAX_WORKERS : int = multiprocessing.cpu_count()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        sequences = get_sequences()
+        builder = modeller_protein_builder_closure()
+        results = executor.map( builder, sequences )
+    print( f"Done {len(list(results))}-sequences...")
 
 
 if __name__ == "__main__" :
