@@ -2,7 +2,7 @@ from typing import Callable
 from functools import partial, reduce
 
 
-def quick_sort[T]( data: list[T] ) -> list[T] :
+def quick_sort_0[T]( data: list[T] ) -> list[T] :
     if len(data) <= 1 :
         return data.copy()
     pivot = data[ len(data) // 2 ]
@@ -32,7 +32,7 @@ def add_x[T]( data: list[T], x: T ) -> list[T] :
 
 type Composable[T] = Callable[ [T], T ]
 
-def compose( *functions: Composable ) -> Composable :
+def compose_0( *functions: Composable ) -> Composable :
     def inner(arg) :
         result = arg
         for fn in functions:
