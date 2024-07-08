@@ -5,8 +5,8 @@ import sys
 import random
 from itertools import groupby
 from typing import Generator, Callable
-import multiprocessing
-import concurrent.futures
+from multiprocessing import cpu_count
+from concurrent.futures import ThreadPoolExecutor
 
 if sys.platform == "darwin":
     FASTA_DATA = "/Users/chchae/work/data/sequence-short.fasta"
@@ -80,7 +80,7 @@ def modeller_protein_builder_closure( jobid : int = 0 ) -> BuilderFuncType :
     def build_func( data : SequenceFasta ) -> int :
         _, _, seq = data
         res = _build_1(seq)
-        res += _build_2(seq)
+        # res += _build_2(seq)
         return res
     
     def _build_1( seq: str ) -> int :
@@ -123,11 +123,12 @@ def get_sequences() -> SequenceGenerator :
 
 
 def main() -> None :
-    MAX_WORKERS : int = multiprocessing.cpu_count()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    MAX_WORKERS : int = cpu_count()
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         sequences = get_sequences()
         builder = modeller_protein_builder_closure()
         results = executor.map( builder, sequences )
+        # print( list(results) )
     print( f"Done {len(list(results))}-sequences...")
 
 
