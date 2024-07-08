@@ -51,7 +51,7 @@ def fasta_sequence_fetch_closure( filename : str ) -> SequenceFetcherFuncType :
                 headerStr = str(header.__next__())
                 (name, descr) = headerStr[1:].strip().split( '|', 1 )
                 seq = "".join( s.strip() for s in lines.__next__() )
-                yield (name, descr, seq)
+                yield ( name.strip(), descr.strip(), seq.strip() )
 
     return fetch_func
 
@@ -67,10 +67,10 @@ def dummy_protein_builder_closure( jobid : int ) :
     def build_func( data : SequenceFasta ) -> int :
         import subprocess
         nseed = random.randint( 35, 42)
-        print( f"start  : {jobid = :2d}, {nseed = :2d}" )
+        print( f"{jobid = :2d}, {nseed = :2d}" )
         cmd = FIBO_EXE + str(nseed)
         ret = subprocess.check_output( cmd, shell=True ).decode("utf-8")
-        print( f"finish : {jobid = :2d}, {nseed = :2d}, {ret = }" )
+        print( f"{jobid = :2d}, {nseed = :2d}, {ret = }" )
         return int(ret)
     
     return build_func
@@ -78,25 +78,24 @@ def dummy_protein_builder_closure( jobid : int ) :
 
 def modeller_protein_builder_closure( jobid : int = 0 ) -> BuilderFuncType :
     def build_func( data : SequenceFasta ) -> int :
-        _, _, seq = data
-        res = _build_1(seq)
-        # res += _build_2(seq)
+        code, _, seq = data
+        ret = _build_1(seq)
+        print( f"{code}: {seq[:20]} {ret[:46]}")
+        res = _build_2(code)
         return res
     
-    def _build_1( seq: str ) -> int :
+    def _build_1( seq: str ) -> str :
         import subprocess
         cmd = f"echo '{seq}' | shasum -a 512256 | shasum -a 512256 | shasum -a 512256"
-        ret = subprocess.check_output( cmd, shell=True ).decode("utf-8").strip()
-        print( f"{jobid}: {seq[:20]} {ret[:56]}")
-        return jobid
+        return subprocess.check_output( cmd, shell=True ).decode("utf-8").strip()
 
-    def _build_2( seq: str ) -> int :
+    def _build_2( code: str ) -> int :
         import subprocess
         nseed = random.randint( 39, 42)
-        print( f"start  : {jobid = :2d}, {nseed = :2d}" )
+        print( f"{code} : {nseed = :2d}" )
         cmd = FIBO_EXE + str(nseed)
         ret = subprocess.check_output( cmd, shell=True ).decode("utf-8")
-        print( f"finish : {jobid = :2d}, {nseed = :2d}, {ret = }" )
+        print( f"{code} : {nseed = :2d}, {ret = }" )
         return int(ret)
 
     return build_func
