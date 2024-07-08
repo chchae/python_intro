@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "functional"
+version = "0.1.0"
+description = ""
+authors = ["Chong Hak CHAE <chchae@krict.re.kr>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
