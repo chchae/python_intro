@@ -11,11 +11,12 @@ else:
     FIBO_EXE =  "/home/chchae/bin/fibo "
 
 
-async def fetch_seed() -> AsyncGenerator[int,None] :
+async def fetch_seed( lock: asyncio.Lock ) -> AsyncGenerator[int,None] :
     seeds = [ random.randint( 40, 45 ) for _ in range(30) ]
     async def fetch() :
         for seed in seeds:
-            yield seed
+            async with lock:
+                yield seed
     return fetch()
 
 
@@ -47,7 +48,7 @@ async def do_something( cmd: str ) -> int :
     return ret
 
 
-async def worker( jobid: int, lock: asyncio.Lock, fetcher : AsyncGenerator[None,None] ) -> list[int] :
+async def worker( jobid: int, fetcher : AsyncGenerator[None,None] ) -> list[int] :
     results = [ await do_something( FIBO_EXE + str(nseed) ) async for nseed in fetcher ]
     print( f"{jobid} : {results}" )
     return results
@@ -59,9 +60,9 @@ async def main() -> None :
     start = time.perf_counter()
 
     lock = asyncio.Lock()
-    fetcher = await fetch_seed()
+    fetcher = await fetch_seed(lock)
     async with asyncio.TaskGroup() as tg:
-        tasks = [ tg.create_task( worker(id, lock, fetcher) ) for id in range(MAX_WORKERS) ]
+        tasks = [ tg.create_task( worker(id, fetcher) ) for id in range(MAX_WORKERS) ]
     results = [ task.result() for task in tasks ]
     print( results )
    
