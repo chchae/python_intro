@@ -73,10 +73,10 @@ async def modeller_protein_builder_closure( jobid: int, fetcher : AsyncGenerator
     async def _build( fasta: SequenceFasta) :
         code, _, seq = fasta
         print( f"{jobid:2d}: {code}" )
-        ret = int( await process_command( FIBO_EXE + " " + str(42) ) )
+        fib = int( await process_command( FIBO_EXE + " " + str( random.randint(38, 45)) ) )
         enc = await process_command( f"echo '{seq}' | shasum -a 512256 | shasum -a 512256 | shasum -a 512256" )
-        print( f"{jobid:2d}: {code} {ret} {enc[:50]}" )
-        return ret
+        print( f"{jobid:2d}: {code} {fib} {enc[:50]}" )
+        return fib
 
     async def process_command( cmd: str ) -> str :
         proc = await asyncio.create_subprocess_shell(
@@ -115,8 +115,9 @@ async def main() -> None :
     async with asyncio.TaskGroup() as tg:
         tasks = [ tg.create_task( await builder(id, fetcher) ) for id in range(MAX_WORKERS) ]
     results = [ task.result() for task in tasks ]
-
-    print( [ r for rs in results for r in rs ] )
+    
+    results = [ r for rs in results for r in rs ]
+    print( f"{len(results)}-structures : {results}" )
     print( f"Elapsed time {time.perf_counter() - start:.1f}" )
 
 
