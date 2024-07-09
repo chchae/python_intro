@@ -12,27 +12,13 @@ else:
 
 
 async def fetch_seed( lock: asyncio.Lock ) -> AsyncGenerator[int,None] :
-    seeds = [ random.randint( 40, 45 ) for _ in range(30) ]
+    seeds = [ random.randint( 30, 40 ) for _ in range(3000) ]
     async def fetch() :
         for seed in seeds:
             async with lock:
                 yield seed
     return fetch()
 
-
-
-async def worker_0( jobid: int, lock: asyncio.Lock, fetcher : AsyncGenerator[None,None] ) -> int :
-    while True:
-        async with lock:
-            try:
-                nseed = await anext(fetcher)
-            except StopAsyncIteration :
-                print( f"{jobid} : end of seed" )
-                break
-
-        _ = await do_something( FIBO_EXE + str(nseed) )
-    return jobid
-    
 
 
 async def do_something( cmd: str ) -> int :
