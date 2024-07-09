@@ -18,24 +18,15 @@ else:
 type SequenceFasta = tuple[ str, str, str ]
 
 
-async def fetch_seed( lock: asyncio.Lock ) -> AsyncGenerator[int,None] :
-    seeds = [ random.randint( 30, 40 ) for _ in range(1000) ]
-    async def fetch() -> AsyncGenerator[int,None] :
-        for seed in seeds:
-            async with lock:
-                yield seed
-    return fetch()
-
-
 async def dummy_sequence_fetch_closure( lock: asyncio.Lock, length: int = 128, count: int = 100 ) -> AsyncGenerator[SequenceFasta,None] :
     _seqs : list[str] = [
         ''.join( random.choices( "ACDEFGHIKLMPQRSTVWY", k=length ) ) for _ in range(count)
     ]
 
     async def fetch_func() -> AsyncGenerator[SequenceFasta,None] :
-        for id in _seqs:
+        for id, seq in enumerate(_seqs) :
             async with lock:
-                yield (id, id, id)
+                yield (str(id), str(id), seq)
 
     return fetch_func()
 
@@ -52,6 +43,24 @@ async def fasta_sequence_fetch_closure( filename : str, lock: asyncio.Lock ) -> 
                     yield ( name.strip(), descr.strip(), seq.strip() )
 
     return fetch_func()
+
+
+async def oracle_sequence_fetch_closure( url : str, userid : str, passwd : str, lock: asyncio.Lock ) -> AsyncGenerator[SequenceFasta,None] :
+    async def fetch_func() -> AsyncGenerator[SequenceFasta,None] :
+        raise NotImplementedError()
+        yield ( "", "", "")
+
+    return fetch_func()
+
+
+async def sqlite_sequence_fetch_closure( url : str, userid : str, passwd : str, lock: asyncio.Lock ) -> AsyncGenerator[SequenceFasta,None] :
+    async def fetch_func() -> AsyncGenerator[SequenceFasta,None] :
+        raise NotImplementedError()
+        yield ( "", "", "")
+
+    return fetch_func()
+
+
 
 
 def is_model_exists( code: str ) -> bool :
@@ -110,6 +119,7 @@ async def main() -> None :
     start = time.perf_counter()
 
     lock = asyncio.Lock()
+    # fetcher = await dummy_sequence_fetch_closure(lock)
     fetcher = await fasta_sequence_fetch_closure(FASTA_DATA, lock)
     builder = modeller_protein_builder_closure
     async with asyncio.TaskGroup() as tg:
