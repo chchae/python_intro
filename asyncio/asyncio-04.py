@@ -83,10 +83,12 @@ async def dummy_protein_builder_closure( jobid: int, fetcher : FetcherFuncType )
 
     async def _build( fasta: SequenceFasta) :
         code, _, seq = fasta
-        print( f"{jobid:2d}: {code} {seq[:40]}" )
-        fib = int( await process_command( FIBO_EXE + " " + str( random.randint(38, 45)) ) )
+        if False:
+            print( f"{jobid:2d}: {code} {seq[:40]}" )
+        fib = int( await process_command( FIBO_EXE + " " + str( random.randint(30, 40)) ) )
         enc = await process_command( f"echo '{seq}' | shasum -a 512256 | shasum -a 512256 | shasum -a 512256" )
-        print( f"{jobid:2d}: {code} {fib} {enc[:40]}" )
+        if False:
+            print( f"{jobid:2d}: {code} {fib} {enc[:40]}" )
         return code
 
     async def process_command( cmd: str ) -> str :
@@ -94,7 +96,7 @@ async def dummy_protein_builder_closure( jobid: int, fetcher : FetcherFuncType )
                 cmd,
                 stderr=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE
-            )
+        )
         stdout, _ = await proc.communicate()
         ret = stdout.decode("utf-8")
         return ret
@@ -134,7 +136,7 @@ async def main() -> None :
     builder = dummy_protein_builder_closure
     async with asyncio.TaskGroup() as tg:
         tasks = [ tg.create_task( await builder(id, fetcher) ) for id in range(MAX_WORKERS) ]
-    results = [ task.result() for task in tasks ]
+    results : list[asyncio.Future] = [ task.result() for task in tasks ]
     
     results = [ r for rs in results for r in rs ]
     print( f"\n{len(results)}-structures : {results}" )
